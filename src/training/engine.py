@@ -187,8 +187,8 @@ def evaluate_adversarial(
     model,
     loader,
     device,
-    attack_fn,
-    attack_kwargs,
+    attack_fn: Callable,
+    attack_kwargs: dict,
 ): 
     """
     Evaluate a model on adversarial examples
@@ -238,4 +238,76 @@ def evaluate_adversarial(
     return {
         "loss": total_loss / total_samples,
         "accuracy": total_correct / total_samples
+    }
+
+def evaluate_targeted_adversarial(
+    model,
+    loader,
+    device,
+    target_class,
+    attack_fn: Callable,
+    attack_kwargs: dict,
+): 
+    """
+    Evaluate a targeted adversarial attack
+    """
+    model.eval()
+
+    total_target_loss = 0.0
+    total_success = 0
+    total_samples = 0
+
+    for images, labels in loader:
+        images = images.to(
+            device,
+            non_blocking=True
+        )
+
+        labels = labels.to(
+            device,
+            non_blocking=True
+        )
+
+        target_labels = torch.full_like(
+            labels,
+            target_class
+        )
+
+        images_adv = attack_fn(
+            model=model,
+            images=images,
+            target_labels=target_labels,
+            **attack_kwargs
+        )
+
+        with torch.no_grad():
+            logits = model(images_adv)
+
+            target_loss = F.cross_entropy(
+                logits,
+                target_labels
+            )
+
+        batch_size = labels.size(0)
+
+        total_target_loss += target_loss.item() * batch_size
+
+        predictions = logits.argmax(dim=1)
+
+        total_success += (predictions == target_labels).sum().item()
+
+        total_samples += batch_size
+
+    return {
+        "target_loss":
+            total_target_loss / total_samples,
+
+        "successes":
+            total_success,
+
+        "samples":
+            total_samples,
+
+        "success_rate":
+            total_success / total_samples,
     }
